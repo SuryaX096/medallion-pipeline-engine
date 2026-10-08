@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# ClickHouse binary and data files
+clickhouse
+user_files
+data/clickhouse_db/
+ch_data/
+*.pid
+*.log
+
+# Environments and caches
+.pytest_cache/
+.venv/
+venv/
+ENV/
+
+# Docker volumes
+.docker/

@@ -1,0 +1,40 @@
+table_name: portfolios
+layer: bronze
+description: Auto-generated Bronze staging configuration for raw portfolios dataset
+storage:
+  format: ORC
+  file_pattern: portfolios/organisation_id=*/processing_date=*/*.orc
+  partitions:
+  - name: organisation_id
+    type: LowCardinality(String)
+    extract_regex: organisation_id=([^/]+)
+  - name: processing_date
+    type: Date
+    extract_regex: processing_date=([^/]+)
+columns:
+- name: portfolio_id
+  raw_type: string
+  clickhouse_type: String
+- name: account_id
+  raw_type: string
+  clickhouse_type: String
+- name: portfolio_name
+  raw_type: string
+  clickhouse_type: String
+- name: benchmark_code
+  raw_type: string
+  clickhouse_type: String
+- name: risk_tolerance
+  raw_type: string
+  clickhouse_type: String
+- name: is_active
+  raw_type: int8
+  clickhouse_type: Int8
+- name: updated_at
+  raw_type: string
+  clickhouse_type: String
+engine: MergeTree
+partition_by: (processing_date, organisation_id)
+order_by:
+- organisation_id
+- processing_date

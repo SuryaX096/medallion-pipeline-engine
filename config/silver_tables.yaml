@@ -1,0 +1,243 @@
+tables:
+  silver_accounts:
+    description: "Normalized and deduplicated accounts with state history"
+    source_table: "bronze_accounts"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "account_id"]
+    order_by: ["organisation_id", "account_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      account_id: "String"
+      account_number: "String"
+      account_name: "String"
+      account_type: "LowCardinality(String)"
+      currency: "LowCardinality(String)"
+      status: "LowCardinality(String)"
+      created_at: "DateTime"
+      updated_at: "DateTime"
+      is_current: "UInt8"
+
+  silver_contacts:
+    description: "Normalized contact profiles linked to accounts"
+    source_table: "bronze_contacts"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "contact_id"]
+    order_by: ["organisation_id", "contact_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      contact_id: "String"
+      account_id: "String"
+      first_name: "String"
+      last_name: "String"
+      full_name: "String"
+      email: "String"
+      phone: "String"
+      role: "LowCardinality(String)"
+      updated_at: "DateTime"
+
+  silver_portfolios:
+    description: "Normalized investment portfolios with relational account validation"
+    source_table: "bronze_portfolios"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "portfolio_id"]
+    order_by: ["organisation_id", "portfolio_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      portfolio_id: "String"
+      account_id: "String"
+      portfolio_name: "String"
+      benchmark_code: "LowCardinality(String)"
+      risk_tolerance: "LowCardinality(String)"
+      is_active: "UInt8"
+      updated_at: "DateTime"
+
+  silver_securities:
+    description: "Normalized tradable securities reference master"
+    source_table: "bronze_securities"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "security_id"]
+    order_by: ["organisation_id", "security_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      security_id: "String"
+      symbol: "LowCardinality(String)"
+      security_name: "String"
+      asset_class: "LowCardinality(String)"
+      sector: "LowCardinality(String)"
+      exchange: "LowCardinality(String)"
+      updated_at: "DateTime"
+
+  silver_holdings:
+    description: "Clean snapshot holdings with normalized keys"
+    source_table: "bronze_holdings"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "holding_id"]
+    order_by: ["organisation_id", "holding_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      holding_id: "String"
+      portfolio_id: "String"
+      security_id: "String"
+      quantity: "Float64"
+      market_value: "Float64"
+      cost_basis: "Float64"
+      unrealized_gain_loss: "Float64"
+      as_of_date: "Date"
+      updated_at: "DateTime"
+
+  silver_trades:
+    description: "Clean trade execution transactions"
+    source_table: "bronze_trades"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "trade_id"]
+    order_by: ["organisation_id", "trade_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      trade_id: "String"
+      portfolio_id: "String"
+      security_id: "String"
+      trade_type: "LowCardinality(String)"
+      trade_status: "LowCardinality(String)"
+      units: "Float64"
+      execution_price: "Float64"
+      gross_amount: "Float64"
+      commission_fee: "Float64"
+      executed_at: "DateTime"
+      updated_at: "DateTime"
+
+  silver_transactions:
+    description: "Clean cash movements and account ledger entries"
+    source_table: "bronze_transactions"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "transaction_id"]
+    order_by: ["organisation_id", "transaction_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      transaction_id: "String"
+      account_id: "String"
+      portfolio_id: "String"
+      transaction_type: "LowCardinality(String)"
+      amount: "Float64"
+      currency: "LowCardinality(String)"
+      description: "String"
+      effective_date: "Date"
+      updated_at: "DateTime"
+
+  silver_advisors:
+    description: "Clean advisors master list"
+    source_table: "bronze_advisors"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "advisor_id"]
+    order_by: ["organisation_id", "advisor_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      advisor_id: "String"
+      advisor_code: "String"
+      full_name: "String"
+      branch_code: "LowCardinality(String)"
+      license_status: "LowCardinality(String)"
+      updated_at: "DateTime"
+
+  silver_fee_schedules:
+    description: "Clean fee schedule rules attached to accounts"
+    source_table: "bronze_fee_schedules"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "fee_schedule_id"]
+    order_by: ["organisation_id", "fee_schedule_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      fee_schedule_id: "String"
+      account_id: "String"
+      tier_name: "LowCardinality(String)"
+      rate_bps: "Float64"
+      min_annual_fee: "Float64"
+      billing_frequency: "LowCardinality(String)"
+      effective_from: "Date"
+      updated_at: "DateTime"
+
+  silver_statements:
+    description: "Clean statement records and metrics"
+    source_table: "bronze_statements"
+    engine: "ReplacingMergeTree(generated_at)"
+    primary_key: ["organisation_id", "statement_id"]
+    order_by: ["organisation_id", "statement_id"]
+    partition_by: "processing_date"
+    dedup_strategy: "window_latest"
+    columns:
+      organisation_id: "LowCardinality(String)"
+      processing_date: "Date"
+      statement_id: "String"
+      account_id: "String"
+      statement_period: "String"
+      starting_balance: "Float64"
+      ending_balance: "Float64"
+      total_fees: "Float64"
+      statement_url: "String"
+      generated_at: "DateTime"
+
+complex_joins:
+  silver_portfolio_holdings_enriched:
+    description: "Denormalized Silver relation joining Portfolios, Accounts, and Holdings with Security master data"
+    engine: "ReplacingMergeTree(updated_at)"
+    primary_key: ["organisation_id", "holding_id"]
+    order_by: ["organisation_id", "holding_id"]
+    partition_by: "processing_date"
+    sql: |
+      SELECT
+          h.organisation_id AS organisation_id,
+          h.processing_date AS processing_date,
+          h.holding_id AS holding_id,
+          h.portfolio_id AS portfolio_id,
+          p.portfolio_name AS portfolio_name,
+          p.risk_tolerance AS risk_tolerance,
+          p.account_id AS account_id,
+          a.account_name AS account_name,
+          a.account_type AS account_type,
+          h.security_id AS security_id,
+          s.symbol AS symbol,
+          s.security_name AS security_name,
+          s.asset_class AS asset_class,
+          s.sector AS sector,
+          h.quantity AS quantity,
+          h.market_value AS market_value,
+          h.cost_basis AS cost_basis,
+          h.unrealized_gain_loss AS unrealized_gain_loss,
+          h.as_of_date AS as_of_date,
+          h.updated_at AS updated_at
+      FROM silver_holdings h
+      INNER JOIN silver_portfolios p 
+          ON h.portfolio_id = p.portfolio_id 
+         AND h.organisation_id = p.organisation_id
+      INNER JOIN silver_accounts a 
+          ON p.account_id = a.account_id 
+         AND p.organisation_id = a.organisation_id
+      LEFT JOIN silver_securities s 
+          ON h.security_id = s.security_id 
+         AND h.organisation_id = s.organisation_id
