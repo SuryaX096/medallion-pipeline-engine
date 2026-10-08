@@ -2,21 +2,20 @@ tables:
   accounts:
     description: "Raw accounts master records"
     primary_key: ["account_id"]
-    file_pattern: "accounts/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/accounts/organisation_id=*/processing_date=*/*.orc"
     columns:
       account_id: String
-      account_number: String
       account_name: String
-      account_type: LowCardinality(String)
-      currency: LowCardinality(String)
       status: LowCardinality(String)
-      created_at: String
+      currency: LowCardinality(String)
+      advisor_id: String
+      opened_at: String
       updated_at: String
 
   contacts:
     description: "Raw contact & person profiles attached to accounts"
     primary_key: ["contact_id"]
-    file_pattern: "contacts/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/contacts/organisation_id=*/processing_date=*/*.orc"
     columns:
       contact_id: String
       account_id: String
@@ -24,39 +23,36 @@ tables:
       last_name: String
       email: String
       phone: String
-      role: LowCardinality(String)
       updated_at: String
 
   portfolios:
     description: "Investment portfolios linked to accounts"
     primary_key: ["portfolio_id"]
-    file_pattern: "portfolios/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/portfolios/organisation_id=*/processing_date=*/*.orc"
     columns:
       portfolio_id: String
       account_id: String
       portfolio_name: String
-      benchmark_code: LowCardinality(String)
-      risk_tolerance: LowCardinality(String)
-      is_active: Int8
+      strategy: LowCardinality(String)
+      risk_profile: LowCardinality(String)
       updated_at: String
 
   securities:
     description: "Tradable securities master catalog"
     primary_key: ["security_id"]
-    file_pattern: "securities/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/securities/organisation_id=*/processing_date=*/*.orc"
     columns:
       security_id: String
-      symbol: LowCardinality(String)
+      ticker: LowCardinality(String)
       security_name: String
       asset_class: LowCardinality(String)
-      sector: LowCardinality(String)
-      exchange: LowCardinality(String)
+      currency: LowCardinality(String)
       updated_at: String
 
   holdings:
     description: "Daily portfolio positions and asset valuations"
     primary_key: ["holding_id"]
-    file_pattern: "holdings/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/holdings/organisation_id=*/processing_date=*/*.orc"
     columns:
       holding_id: String
       portfolio_id: String
@@ -64,78 +60,68 @@ tables:
       quantity: Float64
       market_value: Float64
       cost_basis: Float64
-      unrealized_gain_loss: Float64
       as_of_date: String
       updated_at: String
 
   trades:
     description: "Executed buy/sell order fills"
     primary_key: ["trade_id"]
-    file_pattern: "trades/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/trades/organisation_id=*/processing_date=*/*.orc"
     columns:
       trade_id: String
       portfolio_id: String
       security_id: String
-      trade_type: LowCardinality(String)
-      trade_status: LowCardinality(String)
-      units: Float64
-      execution_price: Float64
-      gross_amount: Float64
-      commission_fee: Float64
-      executed_at: String
+      side: LowCardinality(String)
+      quantity: Float64
+      price: Float64
+      trade_value: Float64
+      commission: Float64
+      trade_timestamp: String
       updated_at: String
 
   transactions:
     description: "Cash ledger movements, cash infusions, dividends, withdrawals"
     primary_key: ["transaction_id"]
-    file_pattern: "transactions/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/transactions/organisation_id=*/processing_date=*/*.orc"
     columns:
       transaction_id: String
       account_id: String
-      portfolio_id: String
       transaction_type: LowCardinality(String)
       amount: Float64
       currency: LowCardinality(String)
-      description: String
-      effective_date: String
+      transaction_timestamp: String
       updated_at: String
 
   advisors:
     description: "Wealth management advisors assigned to clients"
     primary_key: ["advisor_id"]
-    file_pattern: "advisors/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/advisors/organisation_id=*/processing_date=*/*.orc"
     columns:
       advisor_id: String
-      advisor_code: String
-      full_name: String
-      branch_code: LowCardinality(String)
-      license_status: LowCardinality(String)
+      advisor_name: String
+      email: String
+      region: LowCardinality(String)
       updated_at: String
 
   fee_schedules:
     description: "Account management fee tiered schedules"
     primary_key: ["fee_schedule_id"]
-    file_pattern: "fee_schedules/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/fee_schedules/organisation_id=*/processing_date=*/*.orc"
     columns:
       fee_schedule_id: String
       account_id: String
-      tier_name: LowCardinality(String)
-      rate_bps: Float64
-      min_annual_fee: Float64
-      billing_frequency: LowCardinality(String)
-      effective_from: String
+      fee_type: LowCardinality(String)
+      rate: Float64
       updated_at: String
 
   statements:
     description: "Periodic account statement summaries"
     primary_key: ["statement_id"]
-    file_pattern: "statements/organisation_id=*/processing_date=*/*.orc"
+    file_pattern: "raw_lake/statements/organisation_id=*/processing_date=*/*.orc"
     columns:
       statement_id: String
       account_id: String
-      statement_period: String
-      starting_balance: Float64
-      ending_balance: Float64
-      total_fees: Float64
-      statement_url: String
-      generated_at: String
+      statement_date: String
+      total_value: Float64
+      currency: LowCardinality(String)
+      updated_at: String

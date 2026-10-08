@@ -4,7 +4,6 @@ import sys
 import yaml
 import pyarrow.orc as orc
 
-# Mapping of PyArrow type strings to ClickHouse types
 TYPE_MAPPING = {
     "string": "String",
     "int8": "Int8",
@@ -33,14 +32,15 @@ def map_arrow_type_to_clickhouse(arrow_type):
 def inspect_orc_file(orc_path, table_name=None):
     if not os.path.exists(orc_path):
         raise FileNotFoundError(f"File not found: {orc_path}")
-        
+
     orc_file = orc.ORCFile(orc_path)
     schema = orc_file.schema
-    
+
     if not table_name:
-        # Infer table name from path or filename
-        table_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(orc_path))))
-        if not table_name or table_name in [".", "", "/"]:
+        parts = os.path.abspath(orc_path).replace("\\", "/").split("/")
+        if len(parts) >= 4 and "organisation_id=" in parts[-3]:
+            table_name = parts[-4]
+        else:
             table_name = os.path.splitext(os.path.basename(orc_path))[0]
 
     columns = []
@@ -49,16 +49,17 @@ def inspect_orc_file(orc_path, table_name=None):
         columns.append({
             "name": field.name,
             "raw_type": str(field.type),
+            "nullable": field.nullable,
             "clickhouse_type": ch_type
         })
-        
+
     bronze_config = {
         "table_name": table_name,
         "layer": "bronze",
         "description": f"Auto-generated Bronze staging configuration for raw {table_name} dataset",
         "storage": {
             "format": "ORC",
-            "file_pattern": f"{table_name}/organisation_id=*/processing_date=*/*.orc",
+            "file_pattern": f"raw_lake/{table_name}/organisation_id=*/processing_date=*/*.orc",
             "partitions": [
                 {
                     "name": "organisation_id",
@@ -77,7 +78,7 @@ def inspect_orc_file(orc_path, table_name=None):
         "partition_by": "(processing_date, organisation_id)",
         "order_by": ["organisation_id", "processing_date"]
     }
-    
+
     return bronze_config
 
 def main():
@@ -87,13 +88,13 @@ def main():
     parser.add_argument("file_path", help="Path to raw ORC file")
     parser.add_argument("--table-name", "-t", default=None, help="Explicit table name (optional)")
     parser.add_argument("--output", "-o", default=None, help="Output YAML file path (optional, prints to stdout if omitted)")
-    
+
     args = parser.parse_args()
-    
+
     try:
         config = inspect_orc_file(args.file_path, args.table_name)
         yaml_content = yaml.dump(config, sort_keys=False, default_flow_style=False)
-        
+
         if args.output:
             os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
             with open(args.output, "w") as f:

@@ -1,104 +1,83 @@
 services:
-  minio:
-    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
-    container_name: medallion_minio
+  postgres:
+    image: postgres:16
+    container_name: medallion-postgres
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadminpassword
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: medallion
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    command: server /data --console-address ":9001"
+      - "5432:5432"
     volumes:
-      - minio_data:/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d medallion"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.3-alpine
-    container_name: medallion_clickhouse
+    image: clickhouse/clickhouse-server:latest
+    container_name: medallion-clickhouse
     environment:
-      CLICKHOUSE_DB: default
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: clickhouse123
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
     ports:
       - "8123:8123"
-      - "9004:9000"
+      - "9002:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ./docker/clickhouse/users.d:/etc/clickhouse-server/users.d
+      - ./data/raw_lake:/var/lib/clickhouse/user_files/raw_lake
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
-      interval: 5s
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
-  postgres:
-    image: postgres:15-alpine
-    container_name: medallion_postgres
-    environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflowpassword
-      POSTGRES_DB: airflow
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  airflow-init:
-    image: apache/airflow:2.8.3-python3.10
-    container_name: medallion_airflow_init
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: medallion-airflow:2.10.5
+    container_name: medallion-airflow
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflowpassword@postgres:5432/airflow
-      _AIRFLOW_DB_MIGRATE: "true"
-      _AIRFLOW_WWW_USER_CREATE: "true"
-      _AIRFLOW_WWW_USER_USERNAME: airflow
-      _AIRFLOW_WWW_USER_PASSWORD: airflowpassword
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db init &&
-        airflow users create \
-          --username airflow \
-          --firstname Data \
-          --lastname Platform \
-          --role Admin \
-          --email admin@example.com \
-          --password airflowpassword || true
-
-  airflow-standalone:
-    image: apache/airflow:2.8.3-python3.10
-    container_name: medallion_airflow
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-      postgres:
+      clickhouse:
         condition: service_healthy
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflowpassword@postgres:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/medallion
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__WEBSERVER__SECRET_KEY: "medallion_super_secret_key_12345678"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__WEBSERVER__SECRET_KEY: medallion_secret_key_airflow_2_10_5_safe
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: admin123
       PYTHONPATH: /opt/airflow
-    volumes:
-      - ./dags:/opt/airflow/dags
-      - ./config:/opt/airflow/config
-      - ./engine:/opt/airflow/engine
     ports:
       - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./config:/opt/airflow/config
+      - ./engine:/opt/airflow/engine
+      - ./generator:/opt/airflow/generator
+      - ./tests:/opt/airflow/tests
+      - ./sql:/opt/airflow/sql
+      - ./data:/opt/airflow/data
     command: standalone
 
 volumes:
-  minio_data:
-  clickhouse_data:
   postgres_data:
+  clickhouse_data:
+  clickhouse_logs:

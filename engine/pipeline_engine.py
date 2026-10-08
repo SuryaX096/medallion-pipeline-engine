@@ -1,15 +1,45 @@
 import os
 import subprocess
 import yaml
+import logging
 
-class ClickHouseLocalRunner:
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("MedallionEngine")
+
+class ClickHouseExecutor:
     """
-    Executes ClickHouse queries using `clickhouse local` in WSL Ubuntu.
-    This guarantees 100% reliability with zero background daemon dependency.
+    Executes ClickHouse queries reliably.
+    If ClickHouse HTTP server (localhost:8123 or $CLICKHOUSE_HOST:$CLICKHOUSE_PORT) is accessible,
+    it executes over HTTP via clickhouse-connect.
+    If not, it falls back seamlessly to `clickhouse local` in WSL Ubuntu.
     """
-    def __init__(self, data_root=None):
+    def __init__(self, host=None, port=None, username=None, password=None, data_root=None):
+        self.host = host or os.environ.get("CLICKHOUSE_HOST", "localhost")
+        self.port = int(port or os.environ.get("CLICKHOUSE_PORT", "8123"))
+        self.username = username or os.environ.get("CLICKHOUSE_USER", "admin")
+        self.password = password or os.environ.get("CLICKHOUSE_PASSWORD", "admin123")
         self.data_root = data_root or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "raw_lake"))
         self.wsl_data_root = self._to_wsl_path(self.data_root)
+        self.client = None
+        self._init_client()
+
+    def _init_client(self):
+        try:
+            import clickhouse_connect
+            self.client = clickhouse_connect.get_client(
+                host=self.host,
+                port=self.port,
+                username=self.username,
+                password=self.password,
+                connect_timeout=3,
+                send_receive_timeout=15
+            )
+            # Test query
+            self.client.command("SELECT 1")
+            logger.info(f"Connected to ClickHouse server at {self.host}:{self.port} as {self.username}")
+        except Exception as e:
+            logger.warning(f"Could not connect to ClickHouse server ({e}). Using native ClickHouse local runner.")
+            self.client = None
 
     def _to_wsl_path(self, win_path):
         win_path = os.path.abspath(win_path).replace("\\", "/")
@@ -20,6 +50,14 @@ class ClickHouseLocalRunner:
 
     def run_query(self, query, format_output="TabSeparated"):
         full_query = query.strip()
+        if self.client:
+            try:
+                res = self.client.query(full_query)
+                return "\n".join(["\t".join(str(val) for val in row) for row in res.result_rows])
+            except Exception as e:
+                logger.warning(f"HTTP server query failed ({e}). Falling back to ClickHouse local.")
+
+        # Fallback to clickhouse local in WSL
         if format_output and not full_query.upper().endswith("FORMAT " + format_output.upper()):
             full_query += f" FORMAT {format_output}"
 
@@ -28,16 +66,33 @@ class ClickHouseLocalRunner:
             "/home/surya/bin/clickhouse", "local",
             "--query", full_query
         ]
-        
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             raise RuntimeError(f"ClickHouse execution error:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}\nQUERY: {query}")
         return proc.stdout.strip()
 
+    def execute_command(self, query):
+        if self.client:
+            try:
+                return self.client.command(query)
+            except Exception as e:
+                logger.warning(f"HTTP server command failed ({e}). Falling back to ClickHouse local.")
+
+        cmd = [
+            "wsl", "-d", "Ubuntu", "-e",
+            "/home/surya/bin/clickhouse", "local",
+            "--query", query
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ClickHouse execution error:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}\nQUERY: {query}")
+        return proc.stdout.strip()
+
+
 class MedallionPipelineEngine:
     def __init__(self, config_dir=None):
         self.config_dir = config_dir or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config"))
-        self.runner = ClickHouseLocalRunner()
+        self.executor = ClickHouseExecutor()
         self.bronze_cfg = self._load_yaml("bronze_tables.yaml")
         self.silver_cfg = self._load_yaml("silver_tables.yaml")
         self.gold_cfg = self._load_yaml("gold_tables.yaml")
@@ -51,12 +106,14 @@ class MedallionPipelineEngine:
     # BRONZE LAYER
     # ==========================================
     def get_bronze_query(self, table_name):
-        """
-        Returns ClickHouse SQL query defining the Bronze layer over raw partitioned ORC files.
-        Extracts folder-based partition columns (organisation_id, processing_date).
-        """
         cols = ", ".join(self.bronze_cfg["tables"][table_name]["columns"].keys())
-        file_glob = f"{self.runner.wsl_data_root}/{table_name}/*/*/*.orc"
+        if self.executor.client:
+            # Inside ClickHouse container user_files mount
+            file_glob = f"raw_lake/{table_name}/*/*/*.orc"
+        else:
+            # Standalone ClickHouse local runner
+            file_glob = f"{self.executor.wsl_data_root}/{table_name}/*/*/*.orc"
+
         return f"""
         SELECT
             extract(_path, 'organisation_id=([^/]+)') AS organisation_id,
@@ -67,40 +124,35 @@ class MedallionPipelineEngine:
         """
 
     def build_bronze_layer(self):
-        print("[BRONZE] Validating Bronze partitioned ingestion queries for all 10+ tables...")
+        logger.info("[BRONZE] Building Bronze partitioned ingestion layer for all 10+ tables...")
         results = {}
         for table_name in self.bronze_cfg["tables"].keys():
             sql = f"SELECT count() FROM ({self.get_bronze_query(table_name)})"
-            count = int(self.runner.run_query(sql, format_output="TabSeparated"))
+            count = int(self.executor.run_query(sql, format_output="TabSeparated"))
             bronze_table_name = f"bronze_{table_name}"
             results[bronze_table_name] = count
-            print(f"  [OK] {bronze_table_name}: Bronze partitioned ingestion ready ({count} rows indexed)")
+            logger.info(f"  [OK] {bronze_table_name}: Ingestion verified ({count} rows indexed)")
         return results
 
     # ==========================================
     # SILVER LAYER
     # ==========================================
     def get_silver_query(self, table_name):
-        """
-        Returns the deduplicated, relationally normalized Silver SQL query.
-        Applies row_number() window filtering per (organisation_id, processing_date, PK).
-        """
-        bronze_sql = self.get_bronze_query(table_name.replace("silver_", ""))
-        
+        base_name = table_name.replace("silver_", "")
+        bronze_sql = self.get_bronze_query(base_name)
+
         if table_name == "silver_accounts":
             return f"""
             SELECT
                 organisation_id,
                 processing_date,
                 account_id,
-                account_number,
                 account_name,
-                account_type,
-                currency,
                 status,
-                parseDateTimeBestEffort(created_at) AS created_at,
-                parseDateTimeBestEffort(updated_at) AS updated_at,
-                1 AS is_current
+                currency,
+                advisor_id,
+                parseDateTimeBestEffort(opened_at) AS opened_at,
+                parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
                        row_number() OVER (
@@ -123,7 +175,6 @@ class MedallionPipelineEngine:
                 concat(first_name, ' ', last_name) AS full_name,
                 lower(email) AS email,
                 phone,
-                role,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -143,9 +194,8 @@ class MedallionPipelineEngine:
                 portfolio_id,
                 account_id,
                 portfolio_name,
-                benchmark_code,
-                risk_tolerance,
-                toUInt8(is_active) AS is_active,
+                strategy,
+                risk_profile,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -163,11 +213,10 @@ class MedallionPipelineEngine:
                 organisation_id,
                 processing_date,
                 security_id,
-                symbol,
+                ticker,
                 security_name,
                 asset_class,
-                sector,
-                exchange,
+                currency,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -190,7 +239,6 @@ class MedallionPipelineEngine:
                 quantity,
                 market_value,
                 cost_basis,
-                unrealized_gain_loss,
                 toDate(as_of_date) AS as_of_date,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
@@ -211,13 +259,12 @@ class MedallionPipelineEngine:
                 trade_id,
                 portfolio_id,
                 security_id,
-                trade_type,
-                trade_status,
-                units,
-                execution_price,
-                gross_amount,
-                commission_fee,
-                parseDateTimeBestEffort(executed_at) AS executed_at,
+                side,
+                quantity,
+                price,
+                trade_value,
+                commission,
+                parseDateTimeBestEffort(trade_timestamp) AS trade_timestamp,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -236,12 +283,10 @@ class MedallionPipelineEngine:
                 processing_date,
                 transaction_id,
                 account_id,
-                portfolio_id,
                 transaction_type,
                 amount,
                 currency,
-                description,
-                toDate(effective_date) AS effective_date,
+                parseDateTimeBestEffort(transaction_timestamp) AS transaction_timestamp,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -259,10 +304,9 @@ class MedallionPipelineEngine:
                 organisation_id,
                 processing_date,
                 advisor_id,
-                advisor_code,
-                full_name,
-                branch_code,
-                license_status,
+                advisor_name,
+                email,
+                region,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -281,11 +325,8 @@ class MedallionPipelineEngine:
                 processing_date,
                 fee_schedule_id,
                 account_id,
-                tier_name,
-                rate_bps,
-                min_annual_fee,
-                billing_frequency,
-                toDate(effective_from) AS effective_from,
+                fee_type,
+                rate,
                 parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
@@ -304,17 +345,15 @@ class MedallionPipelineEngine:
                 processing_date,
                 statement_id,
                 account_id,
-                statement_period,
-                starting_balance,
-                ending_balance,
-                total_fees,
-                statement_url,
-                parseDateTimeBestEffort(generated_at) AS generated_at
+                toDate(statement_date) AS statement_date,
+                total_value,
+                currency,
+                parseDateTimeBestEffort(updated_at) AS updated_at
             FROM (
                 SELECT *,
                        row_number() OVER (
                            PARTITION BY organisation_id, processing_date, statement_id 
-                           ORDER BY parseDateTimeBestEffort(generated_at) DESC
+                           ORDER BY parseDateTimeBestEffort(updated_at) DESC
                        ) as rn
                 FROM ({bronze_sql})
             )
@@ -323,14 +362,59 @@ class MedallionPipelineEngine:
         else:
             raise ValueError(f"Unknown silver table: {table_name}")
 
+    def get_enriched_holdings_query(self):
+        holdings_sql = self.get_silver_query("silver_holdings")
+        portfolios_sql = self.get_silver_query("silver_portfolios")
+        accounts_sql = self.get_silver_query("silver_accounts")
+        securities_sql = self.get_silver_query("silver_securities")
+        return f"""
+        SELECT
+            h.organisation_id AS organisation_id,
+            h.processing_date AS processing_date,
+            h.holding_id AS holding_id,
+            h.portfolio_id AS portfolio_id,
+            p.portfolio_name AS portfolio_name,
+            p.strategy AS strategy,
+            p.risk_profile AS risk_profile,
+            p.account_id AS account_id,
+            a.account_name AS account_name,
+            a.status AS account_status,
+            h.security_id AS security_id,
+            s.ticker AS ticker,
+            s.security_name AS security_name,
+            s.asset_class AS asset_class,
+            h.quantity AS quantity,
+            h.market_value AS market_value,
+            h.cost_basis AS cost_basis,
+            h.as_of_date AS as_of_date,
+            h.updated_at AS updated_at
+        FROM ({holdings_sql}) h
+        INNER JOIN ({portfolios_sql}) p 
+            ON h.portfolio_id = p.portfolio_id 
+           AND h.organisation_id = p.organisation_id
+        INNER JOIN ({accounts_sql}) a 
+            ON p.account_id = a.account_id 
+           AND p.organisation_id = a.organisation_id
+        LEFT JOIN ({securities_sql}) s 
+            ON h.security_id = s.security_id 
+           AND h.organisation_id = s.organisation_id
+        """
+
     def build_silver_layer(self):
-        print("\n[SILVER] Validating Silver deduplication and relational normalization layer...")
+        logger.info("\n[SILVER] Validating Silver deduplication and relational normalization layer...")
         results = {}
         for table_name in self.silver_cfg["tables"].keys():
             sql = f"SELECT count() FROM ({self.get_silver_query(table_name)})"
-            count = int(self.runner.run_query(sql, format_output="TabSeparated"))
+            count = int(self.executor.run_query(sql, format_output="TabSeparated"))
             results[table_name] = count
-            print(f"  [OK] {table_name}: Deduplicated & normalized ({count} rows)")
+            logger.info(f"  [OK] {table_name}: Deduplicated & normalized ({count} rows)")
+
+        # Enriched join validation
+        sql = f"SELECT count() FROM ({self.get_enriched_holdings_query()})"
+        count = int(self.executor.run_query(sql, format_output="TabSeparated"))
+        results["silver_portfolio_holdings_enriched"] = count
+        logger.info(f"  [OK] silver_portfolio_holdings_enriched: Enriched relational join verified ({count} rows)")
+
         return results
 
     # ==========================================
@@ -345,25 +429,21 @@ class MedallionPipelineEngine:
                 processing_date,
                 round(sum(market_value), 2) AS total_market_value,
                 round(sum(cost_basis), 2) AS total_cost_basis,
-                round(sum(unrealized_gain_loss), 2) AS total_unrealized_pnl,
                 count() AS position_count
             FROM ({holdings_sql})
             GROUP BY organisation_id, processing_date
             """
         elif table_name == "gold_organisation_asset_allocation":
-            holdings_sql = self.get_silver_query("silver_holdings")
-            sec_sql = self.get_silver_query("silver_securities")
+            enriched_sql = self.get_enriched_holdings_query()
             return f"""
             SELECT
-                h.organisation_id AS organisation_id,
-                h.processing_date AS processing_date,
-                s.asset_class AS asset_class,
-                round(sum(h.market_value), 2) AS total_allocation_value,
+                organisation_id,
+                processing_date,
+                asset_class,
+                round(sum(market_value), 2) AS total_allocation_value,
                 count() AS asset_count
-            FROM ({holdings_sql}) h
-            LEFT JOIN ({sec_sql}) s
-              ON h.security_id = s.security_id AND h.organisation_id = s.organisation_id
-            GROUP BY h.organisation_id, h.processing_date, s.asset_class
+            FROM ({enriched_sql})
+            GROUP BY organisation_id, processing_date, asset_class
             """
         elif table_name == "gold_organisation_trading_volume":
             trades_sql = self.get_silver_query("silver_trades")
@@ -371,25 +451,25 @@ class MedallionPipelineEngine:
             SELECT
                 organisation_id,
                 processing_date,
-                trade_type,
-                round(sum(gross_amount), 2) AS total_gross_volume,
-                round(sum(commission_fee), 2) AS total_commissions,
-                round(sum(units), 4) AS total_units,
+                side,
+                round(sum(trade_value), 2) AS total_gross_volume,
+                round(sum(commission), 2) AS total_commissions,
+                round(sum(quantity), 4) AS total_quantity,
                 count() AS trade_count
             FROM ({trades_sql})
-            GROUP BY organisation_id, processing_date, trade_type
+            GROUP BY organisation_id, processing_date, side
             """
         else:
             raise ValueError(f"Unknown gold table: {table_name}")
 
     def build_gold_layer(self):
-        print("\n[GOLD] Validating Gold multi-tenant aggregation layer...")
+        logger.info("\n[GOLD] Validating Gold multi-tenant aggregation layer...")
         results = {}
         for gold_table in self.gold_cfg["tables"].keys():
             sql = f"SELECT count() FROM ({self.get_gold_query(gold_table)})"
-            count = int(self.runner.run_query(sql, format_output="TabSeparated"))
+            count = int(self.executor.run_query(sql, format_output="TabSeparated"))
             results[gold_table] = count
-            print(f"  [OK] {gold_table}: Aggregated ({count} metric buckets)")
+            logger.info(f"  [OK] {gold_table}: Aggregated ({count} metric buckets)")
         return results
 
     def run_entire_pipeline(self):

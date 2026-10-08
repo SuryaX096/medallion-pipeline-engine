@@ -3,7 +3,7 @@ layer: bronze
 description: Auto-generated Bronze staging configuration for raw portfolios dataset
 storage:
   format: ORC
-  file_pattern: portfolios/organisation_id=*/processing_date=*/*.orc
+  file_pattern: raw_lake/portfolios/organisation_id=*/processing_date=*/*.orc
   partitions:
   - name: organisation_id
     type: LowCardinality(String)
@@ -14,24 +14,27 @@ storage:
 columns:
 - name: portfolio_id
   raw_type: string
+  nullable: true
   clickhouse_type: String
 - name: account_id
   raw_type: string
+  nullable: true
   clickhouse_type: String
 - name: portfolio_name
   raw_type: string
+  nullable: true
   clickhouse_type: String
-- name: benchmark_code
+- name: strategy
   raw_type: string
+  nullable: true
   clickhouse_type: String
-- name: risk_tolerance
+- name: risk_profile
   raw_type: string
+  nullable: true
   clickhouse_type: String
-- name: is_active
-  raw_type: int8
-  clickhouse_type: Int8
 - name: updated_at
   raw_type: string
+  nullable: true
   clickhouse_type: String
 engine: MergeTree
 partition_by: (processing_date, organisation_id)

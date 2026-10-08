@@ -1,20 +1,19 @@
 tables:
   gold_daily_organisation_aum:
-    description: "Daily rollup of Total Assets Under Management (AUM), Cash, and Unrealized PnL per organisation"
-    engine: "SummingMergeTree((total_market_value, total_cost_basis, total_unrealized_pnl, position_count))"
+    description: "Daily rollup of Total Assets Under Management (AUM), Cost Basis, and Position Count per organisation"
+    engine: "SummingMergeTree((total_market_value, total_cost_basis, position_count))"
     primary_key: ["organisation_id", "processing_date"]
     order_by: ["organisation_id", "processing_date"]
     partition_by: "toYYYYMM(processing_date)"
-    engine_rationale: "SummingMergeTree is chosen because AUM, cost basis, and counts are strictly additive metrics over partitions, allowing ClickHouse background merges to auto-aggregate without re-scanning historical rows."
+    engine_rationale: "SummingMergeTree automatically pre-aggregates market value and cost basis during ClickHouse background merges."
     sql: |
       SELECT
           h.organisation_id AS organisation_id,
           h.processing_date AS processing_date,
           round(sum(h.market_value), 2) AS total_market_value,
           round(sum(h.cost_basis), 2) AS total_cost_basis,
-          round(sum(h.unrealized_gain_loss), 2) AS total_unrealized_pnl,
           count() AS position_count
-      FROM silver_holdings h
+      FROM silver.silver_holdings h
       GROUP BY
           h.organisation_id,
           h.processing_date
@@ -25,7 +24,7 @@ tables:
     primary_key: ["organisation_id", "processing_date", "asset_class"]
     order_by: ["organisation_id", "processing_date", "asset_class"]
     partition_by: "toYYYYMM(processing_date)"
-    engine_rationale: "SummingMergeTree aggregates exposure per asset class efficiently per organisation and date."
+    engine_rationale: "SummingMergeTree pre-aggregates portfolio allocation by asset class per organisation and date."
     sql: |
       SELECT
           e.organisation_id AS organisation_id,
@@ -33,7 +32,7 @@ tables:
           e.asset_class AS asset_class,
           round(sum(e.market_value), 2) AS total_allocation_value,
           count() AS asset_count
-      FROM silver_portfolio_holdings_enriched e
+      FROM silver.silver_portfolio_holdings_enriched e
       GROUP BY
           e.organisation_id,
           e.processing_date,
@@ -41,22 +40,22 @@ tables:
 
   gold_organisation_trading_volume:
     description: "Daily trade volumes, commission costs, and order executions partitioned by organisation"
-    engine: "SummingMergeTree((total_gross_volume, total_commissions, total_units, trade_count))"
-    primary_key: ["organisation_id", "processing_date", "trade_type"]
-    order_by: ["organisation_id", "processing_date", "trade_type"]
+    engine: "SummingMergeTree((total_gross_volume, total_commissions, total_quantity, trade_count))"
+    primary_key: ["organisation_id", "processing_date", "side"]
+    order_by: ["organisation_id", "processing_date", "side"]
     partition_by: "toYYYYMM(processing_date)"
-    engine_rationale: "SummingMergeTree aggregates execution volume, turnover, and broker fees per trade type and organisation."
+    engine_rationale: "SummingMergeTree efficiently aggregates execution turnover and broker commissions per trade side and tenant."
     sql: |
       SELECT
           t.organisation_id AS organisation_id,
           t.processing_date AS processing_date,
-          t.trade_type AS trade_type,
-          round(sum(t.gross_amount), 2) AS total_gross_volume,
-          round(sum(t.commission_fee), 2) AS total_commissions,
-          round(sum(t.units), 4) AS total_units,
+          t.side AS side,
+          round(sum(t.trade_value), 2) AS total_gross_volume,
+          round(sum(t.commission), 2) AS total_commissions,
+          round(sum(t.quantity), 4) AS total_quantity,
           count() AS trade_count
-      FROM silver_trades t
+      FROM silver.silver_trades t
       GROUP BY
           t.organisation_id,
           t.processing_date,
-          t.trade_type
+          t.side

@@ -1,22 +1,37 @@
-# Byte-compiled / optimized / DLL files
+# Environments and caches
+.env
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyd
+.pytest_cache/
 
-# ClickHouse binary and data files
-clickhouse
-user_files
-data/clickhouse_db/
-ch_data/
+# Airflow runtime logs
+airflow/logs/*
+!airflow/logs/.gitkeep
+
+# Generated data
+data/generated/*
+data/raw_lake/*
+!data/raw_lake/.gitkeep
+
+# Temporary files
 *.pid
 *.log
+user_files
+minio.license
+license/
 
-# Environments and caches
-.pytest_cache/
-.venv/
-venv/
-ENV/
-
-# Docker volumes
-.docker/
+# ClickHouse local storage artifacts
+access/
+cores/
+metadata/
+preprocessed_configs/
+store/
+uuid
+data/default/
+data/clickhouse_db/
+/clickhouse
+/clickhouse.exe
