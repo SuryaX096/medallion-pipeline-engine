@@ -56,25 +56,37 @@ medallion-data-platform/
 │   ├── gold_tables.yaml                 # Gold metrics & SummingMergeTree definitions
 │   └── auto_generated_portfolios.yaml   # CLI auto-generated schema artifact
 ├── data/
-│   └── raw_lake/                        # 210 partitioned ORC files
-│       ├── accounts/
-│       ├── contacts/
-│       ├── portfolios/
-│       ├── securities/
-│       ├── holdings/
-│       ├── trades/
-│       ├── transactions/
-│       ├── advisors/
-│       ├── fee_schedules/
-│       └── statements/
+│   ├── raw_lake/                        # 210 partitioned ORC files
+│   │   ├── accounts/
+│   │   ├── contacts/
+│   │   ├── portfolios/
+│   │   ├── securities/
+│   │   ├── holdings/
+│   │   ├── trades/
+│   │   ├── transactions/
+│   │   ├── advisors/
+│   │   ├── fee_schedules/
+│   │   └── statements/
+│   └── generated/                       # Output artifacts & export staging
 ├── docker/
 │   └── clickhouse/
 │       └── users.d/admin.xml            # ClickHouse user & access management
+├── docs/
+│   ├── ARCHITECTURE.md                  # Comprehensive architectural specifications
+│   └── SCHEMA_DICTIONARY.md             # Full data model dictionary for all layers
 ├── engine/
 │   ├── pipeline_engine.py               # Medallion Engine (Bronze -> Silver -> Gold)
 │   └── schema_helper.py                 # Standalone CLI tool to auto-generate YAML
 ├── generator/
 │   └── synthetic_data_generator.py      # Synthetic ORC generator (10 tables, 3 orgs, 7 dates)
+├── sql/
+│   ├── bronze/
+│   │   └── 01_create_bronze_views.sql   # Bronze partitioned view DDLs
+│   ├── silver/
+│   │   ├── 01_create_silver_tables.sql  # ReplacingMergeTree DDLs & dedup logic
+│   │   └── 02_create_enriched_portfolio_holdings.sql # 3NF relational joins
+│   └── gold/
+│       └── 01_create_gold_tables.sql    # SummingMergeTree tables & aggregates
 ├── tests/
 │   └── test_medallion_pipeline.py       # 6-phase test suite validating all criteria
 ├── Dockerfile                           # Custom Airflow 2.10.5 image with dependencies

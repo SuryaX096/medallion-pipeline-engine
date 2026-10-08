@@ -14,6 +14,7 @@ airflow/logs/*
 
 # Generated data
 data/generated/*
+!data/generated/.gitkeep
 data/raw_lake/*
 !data/raw_lake/.gitkeep
 
