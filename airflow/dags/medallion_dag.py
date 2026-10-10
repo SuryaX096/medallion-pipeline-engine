@@ -4,9 +4,17 @@ from airflow.operators.python import PythonOperator
 import sys
 import os
 
-ENGINE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if ENGINE_PATH not in sys.path:
-    sys.path.insert(0, ENGINE_PATH)
+def get_project_root():
+    if os.path.exists("/opt/airflow/generator") and os.path.exists("/opt/airflow/data"):
+        return "/opt/airflow"
+    candidate = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if os.path.exists(os.path.join(candidate, "generator")):
+        return candidate
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+PROJECT_ROOT = get_project_root()
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from generator.synthetic_data_generator import generate_and_save_dataset
 from engine.pipeline_engine import MedallionPipelineEngine
@@ -31,26 +39,30 @@ dag = DAG(
 )
 
 def task_generate_raw_data(**kwargs):
-    raw_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw_lake"))
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw_lake")
     print(f"Generating synthetic ORC files into: {raw_dir}")
     stats = generate_and_save_dataset(raw_dir)
     print("Generation complete:", stats)
     return stats
 
 def task_run_bronze(**kwargs):
-    engine = MedallionPipelineEngine()
+    config_dir = os.path.join(PROJECT_ROOT, "config")
+    engine = MedallionPipelineEngine(config_dir=config_dir)
     return engine.build_bronze_layer()
 
 def task_run_silver(**kwargs):
-    engine = MedallionPipelineEngine()
+    config_dir = os.path.join(PROJECT_ROOT, "config")
+    engine = MedallionPipelineEngine(config_dir=config_dir)
     return engine.build_silver_layer()
 
 def task_run_gold(**kwargs):
-    engine = MedallionPipelineEngine()
+    config_dir = os.path.join(PROJECT_ROOT, "config")
+    engine = MedallionPipelineEngine(config_dir=config_dir)
     return engine.build_gold_layer()
 
 def task_validate_medallion(**kwargs):
-    engine = MedallionPipelineEngine()
+    config_dir = os.path.join(PROJECT_ROOT, "config")
+    engine = MedallionPipelineEngine(config_dir=config_dir)
     collision_id = "ACC-COLLISION-999"
     sql = f"""
     SELECT organisation_id, count()
