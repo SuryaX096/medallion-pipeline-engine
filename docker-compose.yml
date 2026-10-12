@@ -75,7 +75,7 @@ services:
       - ./tests:/opt/airflow/tests
       - ./sql:/opt/airflow/sql
       - ./data:/opt/airflow/data
-    command: standalone
+    command: bash -c "rm -f /opt/airflow/airflow-webserver.pid && airflow standalone"
 
 volumes:
   postgres_data:
