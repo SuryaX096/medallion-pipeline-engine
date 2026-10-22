@@ -75,7 +75,27 @@ services:
       - ./tests:/opt/airflow/tests
       - ./sql:/opt/airflow/sql
       - ./data:/opt/airflow/data
+      - ./dbt_project:/opt/airflow/dbt_project
+      - ./scripts:/opt/airflow/scripts
     command: bash -c "rm -f /opt/airflow/airflow-webserver.pid && airflow standalone"
+
+  nifi:
+    image: apache/nifi:1.28.0
+    container_name: medallion-nifi
+    ports:
+      - "8443:8443"
+    environment:
+      NIFI_SECURITY_USER_LOGIN_IDENTITY_PROVIDER: single-user-provider
+      SINGLE_USER_CREDENTIALS_USERNAME: admin
+      SINGLE_USER_CREDENTIALS_PASSWORD: Admin12345678!
+      NIFI_JVM_HEAP_INIT: 512m
+      NIFI_JVM_HEAP_MAX: 1024m
+      NIFI_WEB_HTTPS_PORT: 8443
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/nifi/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 volumes:
   postgres_data:

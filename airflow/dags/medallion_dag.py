@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
 import sys
 import os
 
@@ -18,6 +19,7 @@ if PROJECT_ROOT not in sys.path:
 
 from generator.synthetic_data_generator import generate_and_save_dataset
 from engine.pipeline_engine import MedallionPipelineEngine
+from scripts.ingest_sp500_batch import ingest_sp500
 
 default_args = {
     'owner': 'data_platform',
@@ -32,10 +34,10 @@ default_args = {
 dag = DAG(
     'medallion_pipeline_engine',
     default_args=default_args,
-    description='DATA-1 Medallion Pipeline Engine (Bronze -> Silver -> Gold) with ClickHouse',
+    description='DATA-1 Medallion Pipeline Engine (Bronze -> Silver -> Gold) with ClickHouse, dbt, and Airflow',
     schedule_interval='@daily',
     catchup=False,
-    tags=['medallion', 'clickhouse', 'multi-tenant', 'data-1'],
+    tags=['medallion', 'clickhouse', 'dbt', 'multi-tenant', 'data-1'],
 )
 
 def task_generate_raw_data(**kwargs):
@@ -44,6 +46,16 @@ def task_generate_raw_data(**kwargs):
     stats = generate_and_save_dataset(raw_dir)
     print("Generation complete:", stats)
     return stats
+
+def task_ingest_sp500(**kwargs):
+    host = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
+    port = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+    user = os.environ.get("CLICKHOUSE_USER", "admin")
+    password = os.environ.get("CLICKHOUSE_PASSWORD", "admin123")
+    print(f"Ingesting public batch S&P 500 constituents to ClickHouse {host}:{port}...")
+    count = ingest_sp500(host=host, port=port, user=user, password=password)
+    print(f"Public batch S&P 500 ingestion complete: {count} records")
+    return count
 
 def task_run_bronze(**kwargs):
     config_dir = os.path.join(PROJECT_ROOT, "config")
@@ -83,6 +95,12 @@ gen_task = PythonOperator(
     dag=dag,
 )
 
+sp500_task = PythonOperator(
+    task_id='ingest_public_batch_sp500',
+    python_callable=task_ingest_sp500,
+    dag=dag,
+)
+
 bronze_task = PythonOperator(
     task_id='bronze_partitioned_ingestion',
     python_callable=task_run_bronze,
@@ -92,6 +110,18 @@ bronze_task = PythonOperator(
 silver_task = PythonOperator(
     task_id='silver_dedup_and_normalize',
     python_callable=task_run_silver,
+    dag=dag,
+)
+
+dbt_run_task = BashOperator(
+    task_id='dbt_transform_silver_and_gold',
+    bash_command='dbt run --project-dir /opt/airflow/dbt_project --profiles-dir /opt/airflow/dbt_project',
+    dag=dag,
+)
+
+dbt_test_task = BashOperator(
+    task_id='dbt_test_data_quality',
+    bash_command='dbt test --project-dir /opt/airflow/dbt_project --profiles-dir /opt/airflow/dbt_project',
     dag=dag,
 )
 
@@ -107,4 +137,4 @@ validation_task = PythonOperator(
     dag=dag,
 )
 
-gen_task >> bronze_task >> silver_task >> gold_task >> validation_task
+[gen_task, sp500_task] >> bronze_task >> silver_task >> dbt_run_task >> dbt_test_task >> gold_task >> validation_task

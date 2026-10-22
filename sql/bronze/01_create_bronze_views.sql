@@ -93,7 +93,7 @@ SELECT
     price,
     trade_value,
     commission,
-    executed_at,
+    trade_timestamp,
     updated_at,
     _path AS _source_file
 FROM file('raw_lake/trades/*/*/*.orc', ORC);
@@ -108,8 +108,7 @@ SELECT
     transaction_type,
     amount,
     currency,
-    description,
-    transaction_date,
+    transaction_timestamp,
     updated_at,
     _path AS _source_file
 FROM file('raw_lake/transactions/*/*/*.orc', ORC);
@@ -120,11 +119,9 @@ SELECT
     extract(_path, 'organisation_id=([^/]+)') AS organisation_id,
     toDate(extract(_path, 'processing_date=([^/]+)')) AS processing_date,
     advisor_id,
-    first_name,
-    last_name,
+    advisor_name,
     email,
-    branch,
-    aum_target,
+    region,
     updated_at,
     _path AS _source_file
 FROM file('raw_lake/advisors/*/*/*.orc', ORC);
@@ -137,9 +134,7 @@ SELECT
     fee_schedule_id,
     account_id,
     fee_type,
-    rate_bps,
-    billing_frequency,
-    effective_date,
+    rate,
     updated_at,
     _path AS _source_file
 FROM file('raw_lake/fee_schedules/*/*/*.orc', ORC);
@@ -151,10 +146,8 @@ SELECT
     toDate(extract(_path, 'processing_date=([^/]+)')) AS processing_date,
     statement_id,
     account_id,
-    period_start,
-    period_end,
-    opening_balance,
-    closing_balance,
+    statement_date,
+    total_value,
     currency,
     updated_at,
     _path AS _source_file

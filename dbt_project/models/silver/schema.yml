@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: stg_accounts
+    description: "Silver cleaned and deduplicated accounts table"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: account_id
+        tests:
+          - not_null
+
+  - name: stg_holdings
+    description: "Silver cleaned and deduplicated holdings table"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: holding_id
+        tests:
+          - not_null
+
+  - name: stg_portfolios
+    description: "Silver cleaned and deduplicated portfolios table"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: portfolio_id
+        tests:
+          - not_null
+
+  - name: stg_trades
+    description: "Silver cleaned and deduplicated trades table"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: trade_id
+        tests:
+          - not_null

@@ -1,0 +1,14 @@
+medallion_clickhouse:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      host: clickhouse
+      port: 8123
+      user: admin
+      password: admin123
+      schema: silver
+      secure: False
+      verify: False
+      custom_settings:
+        allow_suspicious_low_cardinality_types: 1

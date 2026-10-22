@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: bronze
+    tables:
+      - name: bronze_accounts
+      - name: bronze_contacts
+      - name: bronze_portfolios
+      - name: bronze_securities
+      - name: bronze_holdings
+      - name: bronze_trades
+      - name: bronze_transactions
+      - name: bronze_advisors
+      - name: bronze_fee_schedules
+      - name: bronze_statements
+      - name: bronze_crypto_stream
+      - name: bronze_sp500_constituents

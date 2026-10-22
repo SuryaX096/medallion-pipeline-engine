@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: fct_daily_organisation_aum
+    description: "Gold aggregate metric: Daily AUM rollup partitioned by organisation and date"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: processing_date
+        tests:
+          - not_null
+
+  - name: fct_organisation_asset_allocation
+    description: "Gold aggregate metric: Multi-tenant portfolio asset allocation distribution"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: asset_class
+        tests:
+          - not_null
+
+  - name: fct_organisation_trading_volume
+    description: "Gold aggregate metric: Daily trading volumes and broker commissions by tenant"
+    columns:
+      - name: organisation_id
+        tests:
+          - not_null
+      - name: side
+        tests:
+          - not_null

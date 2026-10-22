@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS silver.silver_trades (
     price Float64,
     trade_value Float64,
     commission Float64,
-    executed_at DateTime,
+    trade_timestamp DateTime,
     updated_at DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMM(processing_date)
@@ -109,8 +109,7 @@ CREATE TABLE IF NOT EXISTS silver.silver_transactions (
     transaction_type LowCardinality(String),
     amount Float64,
     currency LowCardinality(String),
-    description String,
-    transaction_date Date,
+    transaction_timestamp DateTime,
     updated_at DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMM(processing_date)
@@ -121,12 +120,9 @@ CREATE TABLE IF NOT EXISTS silver.silver_advisors (
     organisation_id LowCardinality(String),
     processing_date Date,
     advisor_id String,
-    first_name String,
-    last_name String,
-    advisor_full_name String,
+    advisor_name String,
     email String,
-    branch LowCardinality(String),
-    aum_target Float64,
+    region LowCardinality(String),
     updated_at DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMM(processing_date)
@@ -139,9 +135,7 @@ CREATE TABLE IF NOT EXISTS silver.silver_fee_schedules (
     fee_schedule_id String,
     account_id String,
     fee_type LowCardinality(String),
-    rate_bps Float64,
-    billing_frequency LowCardinality(String),
-    effective_date Date,
+    rate Float64,
     updated_at DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMM(processing_date)
@@ -153,10 +147,8 @@ CREATE TABLE IF NOT EXISTS silver.silver_statements (
     processing_date Date,
     statement_id String,
     account_id String,
-    period_start Date,
-    period_end Date,
-    opening_balance Float64,
-    closing_balance Float64,
+    statement_date Date,
+    total_value Float64,
     currency LowCardinality(String),
     updated_at DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
